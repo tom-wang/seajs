@@ -1,13 +1,26 @@
 
 build:
-	ant -buildfile tools/build.xml build_seajs
+	@seatools build
 
-build_all:
-	ant -buildfile tools/build.xml
+test: test_node test_local test_http
 
-test:
-	node tests/runner.js
-	phantomjs tools/phantom.js http://localhost/~lifesinger/seajs/seajs/tests/runner.html?console
+test_node:
+	@node tests/node-runner.js
+
+test_local:
+	@seatools site
+	@seatools test --local
+
+test_http:
+	@seatools site
+	@seatools test --http
+
+totoro:
+	@seatools site
+	@seatools test --totoro
 
 size:
-	tools/size.sh
+	@seatools size
+
+pages:
+	@seatools publish

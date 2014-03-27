@@ -1,269 +1,175 @@
 /**
- * Path utilities
+ * util-path.js - The utilities for operating path such as id, uri
  */
-;(function(util, config, global) {
 
-  var DIRNAME_RE = /[^?]*(?=\/.*$)/
-  var MULTIPLE_SLASH_RE = /([^:\/])\/\/+/g
-  var FILE_EXT_RE = /\.(?:css|js)$/
-  var ROOT_RE = /^(.*?\w)(?:\/|$)/
-  var VARS_RE = /\{\{([^{}]+)\}\}/g
+var DIRNAME_RE = /[^?#]*\//
 
+var DOT_RE = /\/\.\//g
+var DOUBLE_DOT_RE = /\/[^/]+\/\.\.\//
+var DOUBLE_SLASH_RE = /([^:/])\/\//g
 
-  /**
-   * Extracts the directory portion of a path.
-   * dirname('a/b/c.js') ==> 'a/b/'
-   * dirname('d.js') ==> './'
-   * @see http://jsperf.com/regex-vs-split/2
-   */
-  function dirname(path) {
-    var s = path.match(DIRNAME_RE)
-    return (s ? s[0] : '.') + '/'
+// Extract the directory portion of a path
+// dirname("a/b/c.js?t=123#xx/zz") ==> "a/b/"
+// ref: http://jsperf.com/regex-vs-split/2
+function dirname(path) {
+  return path.match(DIRNAME_RE)[0]
+}
+
+// Canonicalize a path
+// realpath("http://test.com/a//./b/../c") ==> "http://test.com/a/c"
+function realpath(path) {
+  // /a/b/./c/./d ==> /a/b/c/d
+  path = path.replace(DOT_RE, "/")
+
+  // a/b/c/../../d  ==>  a/b/../d  ==>  a/d
+  while (path.match(DOUBLE_DOT_RE)) {
+    path = path.replace(DOUBLE_DOT_RE, "/")
   }
 
+  // a//b/c  ==>  a/b/c
+  path = path.replace(DOUBLE_SLASH_RE, "$1/")
 
-  /**
-   * Canonicalizes a path.
-   * realpath('./a//b/../c') ==> 'a/c'
-   */
-  function realpath(path) {
-    MULTIPLE_SLASH_RE.lastIndex = 0
+  return path
+}
 
-    // 'file:///a//b/c' ==> 'file:///a/b/c'
-    // 'http://a//b/c' ==> 'http://a/b/c'
-    if (MULTIPLE_SLASH_RE.test(path)) {
-      path = path.replace(MULTIPLE_SLASH_RE, '$1\/')
-    }
+// Normalize an id
+// normalize("path/to/a") ==> "path/to/a.js"
+// NOTICE: substring is faster than negative slice and RegExp
+function normalize(path) {
+  var last = path.length - 1
+  var lastC = path.charAt(last)
 
-    // 'a/b/c', just return.
-    if (path.indexOf('.') === -1) {
-      return path
-    }
-
-    var original = path.split('/')
-    var ret = [], part
-
-    for (var i = 0; i < original.length; i++) {
-      part = original[i]
-
-      if (part === '..') {
-        if (ret.length === 0) {
-          throw new Error('The path is invalid: ' + path)
-        }
-        ret.pop()
-      }
-      else if (part !== '.') {
-        ret.push(part)
-      }
-    }
-
-    return ret.join('/')
+  // If the uri ends with `#`, just return it without '#'
+  if (lastC === "#") {
+    return path.substring(0, last)
   }
 
+  return (path.substring(last - 2) === ".js" ||
+      path.indexOf("?") > 0 ||
+      path.substring(last - 3) === ".css" ||
+      lastC === "/") ? path : path + ".js"
+}
 
-  /**
-   * Normalizes an uri.
-   */
-  function normalize(uri) {
-    uri = realpath(uri)
-    var lastChar = uri.charAt(uri.length - 1)
 
-    if (lastChar === '/') {
-      return uri
-    }
+var PATHS_RE = /^([^/:]+)(\/.+)$/
+var VARS_RE = /{([^{]+)}/g
 
-    // Adds the default '.js' extension except that the uri ends with #.
-    // ref: http://jsperf.com/get-the-last-character
-    if (lastChar === '#') {
-      uri = uri.slice(0, -1)
-    }
-    else if (uri.indexOf('?') === -1 && !FILE_EXT_RE.test(uri)) {
-      uri += '.js'
-    }
+function parseAlias(id) {
+  var alias = data.alias
+  return alias && isString(alias[id]) ? alias[id] : id
+}
 
-    // Remove ':80/' for bug in IE
-    if (uri.indexOf(':80/') > 0) {
-      uri = uri.replace(':80/', '/')
-    }
+function parsePaths(id) {
+  var paths = data.paths
+  var m
 
-    return uri
+  if (paths && (m = id.match(PATHS_RE)) && isString(paths[m[1]])) {
+    id = paths[m[1]] + m[2]
   }
 
+  return id
+}
 
-  /**
-   * Parses {{xxx}} in the module id.
-   */
-  function parseVars(id) {
-    if (id.indexOf('{') === -1) {
-      return id
-    }
+function parseVars(id) {
+  var vars = data.vars
 
-    var vars = config.vars
-
-    return id.replace(VARS_RE, function(m, key) {
-      return vars.hasOwnProperty(key) ? vars[key] : ''
+  if (vars && id.indexOf("{") > -1) {
+    id = id.replace(VARS_RE, function(m, key) {
+      return isString(vars[key]) ? vars[key] : m
     })
   }
 
+  return id
+}
 
-  /**
-   * Parses alias in the module id. Only parse the first part.
-   */
-  function parseAlias(id) {
-    // #xxx means xxx is already alias-parsed.
-    if (id.charAt(0) === '#') {
-      return id.substring(1)
-    }
+function parseMap(uri) {
+  var map = data.map
+  var ret = uri
 
-    var alias = config.alias
-
-    // Only top-level id needs to parse alias.
-    if (alias && isTopLevel(id)) {
-      var parts = id.split('/')
-      var first = parts[0]
-
-      if (alias.hasOwnProperty(first)) {
-        parts[0] = alias[first]
-        id = parts.join('/')
-      }
-    }
-
-    return id
-  }
-
-
-  /**
-   * Converts the uri according to the map rules.
-   */
-  function parseMap(uri) {
-    // map: [[match, replace], ...]
-    var map = config.map || []
-    if (!map.length) return uri
-
-    var ret = uri
-
-    // Apply all matched rules in sequence.
-    for (var i = 0; i < map.length; i++) {
+  if (map) {
+    for (var i = 0, len = map.length; i < len; i++) {
       var rule = map[i]
 
-      if (util.isArray(rule) && rule.length === 2) {
-        var m = rule[0]
+      ret = isFunction(rule) ?
+          (rule(uri) || uri) :
+          uri.replace(rule[0], rule[1])
 
-        if (util.isString(m) && ret.indexOf(m) > -1 ||
-            util.isRegExp(m) && m.test(ret)) {
-          ret = ret.replace(m, rule[1])
-        }
-      }
-      else if (util.isFunction(rule)) {
-        ret = rule(ret)
-      }
+      // Only apply the first matched rule
+      if (ret !== uri) break
     }
-
-    if (!isAbsolute(ret)) {
-      ret = realpath(dirname(pageUri) + ret)
-    }
-
-    if (ret !== uri) {
-      //mapCache[ret] = uri
-    }
-
-    return ret
   }
 
+  return ret
+}
 
-  /**
-   * Converts id to uri.
-   */
-  function id2Uri(id, refUri) {
-    if (!id) return ''
 
-    id = parseAlias(parseVars(id))
-    refUri || (refUri = pageUri)
+var ABSOLUTE_RE = /^\/\/.|:\//
+var ROOT_DIR_RE = /^.*?\/\/.*?\//
 
-    var ret
+function addBase(id, refUri) {
+  var ret
+  var first = id.charAt(0)
 
-    // absolute id
-    if (isAbsolute(id)) {
-      ret = id
-    }
-    // relative id
-    else if (isRelative(id)) {
-      // Converts './a' to 'a', to avoid unnecessary loop in realpath.
-      if (id.indexOf('./') === 0) {
-        id = id.substring(2)
-      }
-      ret = dirname(refUri) + id
-    }
-    // root id
-    else if (isRoot(id)) {
-      ret = refUri.match(ROOT_RE)[1] + id
-    }
-    // top-level id
-    else {
-      ret = config.base + '/' + id
-    }
-
-    return parseMap(normalize(ret))
+  // Absolute
+  if (ABSOLUTE_RE.test(id)) {
+    ret = id
+  }
+  // Relative
+  else if (first === ".") {
+    ret = realpath((refUri ? dirname(refUri) : data.cwd) + id)
+  }
+  // Root
+  else if (first === "/") {
+    var m = data.cwd.match(ROOT_DIR_RE)
+    ret = m ? m[0] + id.substring(1) : id
+  }
+  // Top-level
+  else {
+    ret = data.base + id
   }
 
-
-  function isAbsolute(id) {
-    return id.indexOf('://') > 0 || id.indexOf('//') === 0
+  // Add default protocol when uri begins with "//"
+  if (ret.indexOf("//") === 0) {
+    ret = location.protocol + ret
   }
 
+  return ret
+}
 
-  function isRelative(id) {
-    return id.indexOf('./') === 0 || id.indexOf('../') === 0
-  }
+function id2Uri(id, refUri) {
+  if (!id) return ""
 
+  id = parseAlias(id)
+  id = parsePaths(id)
+  id = parseVars(id)
+  id = normalize(id)
 
-  function isRoot(id) {
-    return id.charAt(0) === '/' && id.charAt(1) !== '/'
-  }
+  var uri = addBase(id, refUri)
+  uri = parseMap(uri)
 
-
-  function isTopLevel(id) {
-    var c = id.charAt(0)
-    return id.indexOf('://') === -1 && c !== '.' && c !== '/'
-  }
-
-
-  /**
-   * Normalizes pathname to start with '/'
-   * Ref: https://groups.google.com/forum/#!topic/seajs/9R29Inqk1UU
-   */
-  function normalizePathname(pathname) {
-    if (pathname.charAt(0) !== '/') {
-      pathname = '/' + pathname
-    }
-    return pathname
-  }
+  return uri
+}
 
 
-  var loc = global['location']
-  var pageUri = loc.protocol + '//' + loc.host +
-      normalizePathname(loc.pathname)
+var doc = document
+var cwd = dirname(doc.URL)
+var scripts = doc.scripts
 
-  // local file in IE: C:\path\to\xx.js
-  if (pageUri.indexOf('\\') > 0) {
-    pageUri = pageUri.replace(/\\/g, '/')
-  }
+// Recommend to add `seajsnode` id for the `sea.js` script element
+var loaderScript = doc.getElementById("seajsnode") ||
+    scripts[scripts.length - 1]
+
+// When `sea.js` is inline, set loaderDir to current working directory
+var loaderDir = dirname(getScriptAbsoluteSrc(loaderScript) || cwd)
+
+function getScriptAbsoluteSrc(node) {
+  return node.hasAttribute ? // non-IE6/7
+      node.src :
+    // see http://msdn.microsoft.com/en-us/library/ms536429(VS.85).aspx
+      node.getAttribute("src", 4)
+}
 
 
-  util.dirname = dirname
-  util.realpath = realpath
-  util.normalize = normalize
-
-  util.parseVars = parseVars
-  util.parseAlias = parseAlias
-  util.parseMap = parseMap
-
-  util.id2Uri = id2Uri
-  util.isAbsolute = isAbsolute
-  util.isRoot = isRoot
-  util.isTopLevel = isTopLevel
-
-  util.pageUri = pageUri
-
-})(seajs._util, seajs._config, this)
+// For Developers
+seajs.resolve = id2Uri
 

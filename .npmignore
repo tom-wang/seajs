@@ -2,10 +2,12 @@ docs/
 src/
 tests/
 tools/
+node_modules/
 CNAME
+Makefile
 *.ico
 *.html
-*.md
+*.txt
 *.xml
 *.yml
 *.iml

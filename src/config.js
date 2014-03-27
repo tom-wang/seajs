@@ -1,117 +1,56 @@
 /**
- * The configuration
+ * config.js - The configuration for the loader
  */
-;(function(seajs, util, config) {
 
-  // Async inserted script
-  var loaderScript = document.getElementById('seajsnode')
+// The root path to use for id2uri parsing
+data.base = loaderDir
 
-  // Static script
-  if (!loaderScript) {
-    var scripts = document.getElementsByTagName('script')
-    loaderScript = scripts[scripts.length - 1]
-  }
+// The loader directory
+data.dir = loaderDir
 
-  var loaderSrc = (loaderScript && util.getScriptAbsoluteSrc(loaderScript)) ||
-      util.pageUri // When sea.js is inline, set base to pageUri.
+// The current working directory
+data.cwd = cwd
 
-  var base = util.dirname(loaderSrc)
-  util.loaderDir = base
+// The charset for requesting files
+data.charset = "utf-8"
 
-  // When src is "http://test.com/libs/seajs/1.0.0/sea.js", redirect base
-  // to "http://test.com/libs/"
-  var match = base.match(/^(.+\/)seajs\/[\.\d]+(?:-dev)?\/$/)
-  if (match) base = match[1]
+// data.alias - An object containing shorthands of module id
+// data.paths - An object containing path shorthands in module id
+// data.vars - The {xxx} variables in module id
+// data.map - An array containing rules to map module uri
+// data.debug - Debug mode. The default value is false
 
-  config.base = base
-  config.main = loaderScript && loaderScript.getAttribute('data-main')
-  config.charset = 'utf-8'
+seajs.config = function(configData) {
 
+  for (var key in configData) {
+    var curr = configData[key]
+    var prev = data[key]
 
-  /**
-   * The function to configure the framework
-   * config({
-   *   'base': 'path/to/base',
-   *   'vars': {
-   *     'locale': 'zh-cn'
-   *   },
-   *   'alias': {
-   *     'app': 'biz/xx',
-   *     'jquery': 'jquery-1.5.2',
-   *     'cart': 'cart?t=20110419'
-   *   },
-   *   'map': [
-   *     ['test.cdn.cn', 'localhost']
-   *   ],
-   *   preload: [],
-   *   charset: 'utf-8',
-   *   debug: false
-   * })
-   *
-   */
-  seajs.config = function(o) {
-    for (var k in o) {
-      if (!o.hasOwnProperty(k)) continue
-
-      var previous = config[k]
-      var current = o[k]
-
-      if (previous && (k === 'alias' || k === 'vars')) {
-        for (var p in current) {
-          if (current.hasOwnProperty(p)) {
-            var prevValue = previous[p]
-            var currValue = current[p]
-
-            checkAliasConflict(prevValue, currValue, p)
-            previous[p] = currValue
-          }
+    // Merge object config such as alias, vars
+    if (prev && isObject(prev)) {
+      for (var k in curr) {
+        prev[k] = curr[k]
+      }
+    }
+    else {
+      // Concat array config such as map
+      if (isArray(prev)) {
+        curr = prev.concat(curr)
+      }
+      // Make sure that `data.base` is an absolute path
+      else if (key === "base") {
+        // Make sure end with "/"
+        if (curr.slice(-1) !== "/") {
+          curr += "/"
         }
+        curr = addBase(curr)
       }
-      else if (previous && (k === 'map' || k === 'preload')) {
-        // for config({ preload: 'some-module' })
-        if (util.isString(current)) {
-          current = [current]
-        }
 
-        util.forEach(current, function(item) {
-          if (item) {
-            previous.push(item)
-          }
-        })
-      }
-      else {
-        config[k] = current
-      }
-    }
-
-    // Makes sure config.base is an absolute path.
-    var base = config.base
-    if (base && !util.isAbsolute(base)) {
-      config.base = util.id2Uri((util.isRoot(base) ? '' : './') + base + '/')
-    }
-
-    debugSync()
-
-    return this
-  }
-
-
-  function debugSync() {
-    // For convenient reference
-    seajs.debug = !!config.debug
-  }
-
-  debugSync()
-
-  function checkAliasConflict(previous, current, key) {
-    if (previous && previous !== current) {
-      util.log('The alias config is conflicted:',
-          'key =', '"' + key + '"',
-          'previous =', '"' + previous + '"',
-          'current =', '"' + current + '"',
-          'warn')
+      // Set config
+      data[key] = curr
     }
   }
 
-})(seajs, seajs._util, seajs._config)
-
+  emit("config", configData)
+  return seajs
+}
