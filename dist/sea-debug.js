@@ -1,5 +1,5 @@
 /**
- * Sea.js 2.2.1 | seajs.org/LICENSE.md
+ * Sea.js 2.3.0 | seajs.org/LICENSE.md
  */
 (function(global, undefined) {
 
@@ -10,7 +10,7 @@ if (global.seajs) {
 
 var seajs = global.seajs = {
   // The current version of Sea.js being used
-  version: "2.2.1"
+  version: "2.3.0"
 }
 
 var data = seajs.data = {}
@@ -86,9 +86,9 @@ var emit = seajs.emit = function(name, data) {
     // Copy callback lists to prevent modification
     list = list.slice()
 
-    // Execute event callbacks
-    while ((fn = list.shift())) {
-      fn(data)
+    // Execute event callbacks, use index because it's the faster.
+    for(var i = 0, len = list.length; i < len; i++) {
+      list[i](data)
     }
   }
 
@@ -250,7 +250,7 @@ function id2Uri(id, refUri) {
 
 
 var doc = document
-var cwd = dirname(doc.URL)
+var cwd = dirname(location.href)
 var scripts = doc.scripts
 
 // Recommend to add `seajsnode` id for the `sea.js` script element
@@ -722,6 +722,8 @@ Module.save = function(uri, meta) {
     mod.dependencies = meta.deps || []
     mod.factory = meta.factory
     mod.status = STATUS.SAVED
+
+    emit("save", mod)
   }
 }
 
